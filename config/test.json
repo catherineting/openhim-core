@@ -1,0 +1,22 @@
+{
+  "mongo": {
+    "url": "mongodb://localhost/openhim-test",
+    "atnaUrl": "mongodb://localhost/openhim-test"
+  },
+  "logger": {
+    "level": "error"
+  },
+  "statsd": {
+    "enabled": true,
+    "host": "localhost"
+  },
+  "application": {
+    "name": "openhim.test"
+  },
+  "caching": {
+    "enabled": false
+  },
+  "agenda": {
+    "startupDelay": 0
+  }
+}
