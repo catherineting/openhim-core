@@ -113,6 +113,8 @@ exports.setupApp = (done) ->
   # MyEdit May 19 2016
   app.use route.get '/keystore/revokedcerts', keystore.getRevokedCerts
   app.use route.post '/keystore/revokedcerts', keystore.addRevokedCert
+  app.use route.post '/keystore/revokedcerts/remove', keystore.removeRevokedCert
+
   #
   
   # server restart endpoint

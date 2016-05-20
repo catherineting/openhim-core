@@ -241,10 +241,29 @@ exports.addRevokedCert = () ->
     cert_entry = new RevokedCert certData
     result = yield Q.ninvoke cert_entry, 'save'
     
-    logger.info "User #{this.authenticated.email} added a new entry in the revocation list with id #{result}"
+    logger.info "User #{this.authenticated.email} added a new entry in the revocation list with for cert with serial: #{result["serial"]};issuer: #{result["issuerDN"]}"
     this.body = 'Successfully added in the Revocation list'
     this.status = 201
   catch e
     logger.error "Could not add in the revocation list via the API: #{e.message}"
-    this.body = e.message
+    this.body = "Failed to add revoked certificate. " + e.message
     this.status = 400
+
+
+exports.removeRevokedCert = () ->
+#must accept {serial,issuer} 
+  # Test if the user is authorised
+  if not authorisation.inGroup 'admin', this.authenticated
+    utils.logAndSetResponse this, 403, "User #{this.authenticated.email} is not an admin, API access to removeRevokedCert.", 'info'
+    return
+
+  certData = this.request.body
+
+  try
+    result = yield RevokedCert.findOne(certData).remove().exec()
+    this.body = "Successfully removed entry in revocation list with serial no: #{certData["serial"]} and issuer: #{certData["issuerDN"]}"
+    logger.info "User #{this.authenticated.email} removed entry in revocation list with serial no: #{certData["serial"]} and issuer: #{certData["issuerDN"]}"
+  catch e
+    logger.error "Could not remove entry in revocation list by ID # via the API: #{e.message}"
+    this.body = e.message
+    this.status = 500
