@@ -217,7 +217,7 @@ exports.getCertKeyStatus = getCertKeyStatus = (callback) ->
 exports.getRevokedCerts = ->
   # Must be admin
   if authorisation.inGroup('admin', this.authenticated) is false
-    utils.logAndSetResponse this, 403, "User #{this.authenticated.email} is not an admin, API access to getCACerts denied.", 'info'
+    utils.logAndSetResponse this, 403, "User #{this.authenticated.email} is not an admin, API access to getRevokedCerts denied.", 'info'
     return
 
   try
@@ -226,3 +226,25 @@ exports.getRevokedCerts = ->
     
   catch err
     utils.logAndSetResponse this, 500, "Could not fetch the list of revoked certificates: #{err}", 'error'
+
+
+exports.addRevokedCert = () ->
+
+  # Test if the user is authorised
+  if not authorisation.inGroup 'admin', this.authenticated
+    utils.logAndSetResponse this, 403, "User #{this.authenticated.email} is not an admin, API access to addRevokedCert denied.", 'info'
+    return
+
+  certData = this.request.body
+
+  try
+    cert_entry = new RevokedCert certData
+    result = yield Q.ninvoke cert_entry, 'save'
+    
+    logger.info "User #{this.authenticated.email} added a new entry in the revocation list with id #{result}"
+    this.body = 'Successfully added in the Revocation list'
+    this.status = 201
+  catch e
+    logger.error "Could not add in the revocation list via the API: #{e.message}"
+    this.body = e.message
+    this.status = 400

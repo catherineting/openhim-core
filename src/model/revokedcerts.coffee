@@ -6,12 +6,12 @@ Schema = mongoose.Schema
 
 #MyEdit - May 17 2016: Revoked certs schema
 RevokedCertSchema = new Schema
-  fingerprint: type: String, unique: true
-  serial: String
-  commonName: String
-  issuerDN: String
-  dateRevoked: Date
-  reason: String
+  "fingerprint": type: String, unique: true
+  "serial": String
+  "commonName": String
+  "issuerDN": String
+  "dateRevoked": Date
+  "reason": String
 
 
 #MyEdit - May 17 2016: Revoked certs model
