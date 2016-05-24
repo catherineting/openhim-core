@@ -137,11 +137,11 @@ sendRequestToRoutes = (ctx, routes, next) ->
 #          else
 #            logger.info '\nSerial: ' + cert['serial'] + '\n'
 
-        try
-          revokedCerts = certAuth.getRevokedCerts()
-          logger.info '\nRevoked certs: ' + revokedCerts
-        catch err
-          logger.info 'Revoke error: ' + err
+        #try
+#          revokedCerts = certAuth.getRevokedCerts()
+#          logger.info '\nRevoked certs: ' + revokedCerts
+#        catch err
+#          logger.info 'Revoke error: ' + err
         ####
 
         if route.cert?

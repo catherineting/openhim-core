@@ -16,6 +16,11 @@ os = require 'os'
 domain = "#{os.hostname()}.#{application.name}.appMetrics"
 sdc = new SDC statsdServer
 
+
+## MyEdit - May 24
+RevokedCert = require("../model/revokedcerts").RevokedCert
+##
+
 ###
 # Fetches the trusted certificates, callsback with an array of certs.
 ###
@@ -80,6 +85,21 @@ clientLookup = (fingerprint, subjectCN, issuerCN) ->
 
     if result?
       # found a match
+
+      ## MyEdit - May 24
+      ## Since we have found a cert-client match, (CA chaining or not)
+      ## we can heck here for revocation list match. 
+      ## 
+      revoked = false
+      RevokedCert.findOne {certFingerprint: fingerprint, issuerDN: issuerCN}, (err,result) ->
+        if err
+          return deferred.reject err
+        if not result?
+          logger.info "Certificate for cn=#{subjectCN} issuerCN=#{issuerCN} is in revocation list."
+          revoked = true
+      ######
+      if revoked?
+        return deferred.resolve null
       return deferred.resolve result
 
     if subjectCN is issuerCN
@@ -129,6 +149,7 @@ exports.koaMiddleware = (next) ->
   if this.authenticated?
     yield next
   else
+    #req.client.authorized is a boolean which says if a client presented a 'valid certificate' along with its request
     if this.req.client.authorized is true
       cert = this.req.connection.getPeerCertificate true
       logger.info "#{cert.subject.CN} is authenticated via TLS."
