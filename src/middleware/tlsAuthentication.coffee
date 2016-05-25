@@ -79,40 +79,14 @@ exports.getServerOptions = (mutualTLS, done) ->
 clientLookup = (fingerprint, subjectCN, issuerCN) ->
   logger.debug "Looking up client linked to cert with fingerprint #{fingerprint} with subject #{subjectCN} and issuer #{issuerCN}"
   deferred = Q.defer()
-  promises = []
+  
 
   Client.findOne certFingerprint: fingerprint, (err, result) ->
     deferred.reject err if err
 
     if result?
       # found a match
-
-      ## MyEdit - May 24
-      ## Since we have found a cert-client match, (CA chaining or not)
-      ## we can heck here for revocation list match.
-      ##
-      revocation = (fp,issCN) ->
-        deff = Q.defer()
-        RevokedCert.findOne {fingerprint:fp, issuerDN: issCN}, (err,revoked) ->
-          if err
-            deff.reject err
-          if revoked?
-            logger.info "revoked: "
-            deff.resolve null
-          else
-            logger.info "not revoked: " + result
-            deff.resolve result
-        return deff.promise
-
-
-      promise_rev = revocation(fingerprint,issuerCN)
-      promise_rev.then (res) ->
-        logger.info "promise res: " + res
-        return deferred.resolve res
-
-      promises.push promise_rev
-      ##
-      #return deferred.resolve result
+      return deferred.resolve result
 
     if subjectCN is issuerCN
       # top certificate reached
@@ -148,12 +122,60 @@ clientLookup = (fingerprint, subjectCN, issuerCN) ->
         logger.warn "tlsClientLookup.type config option does not contain a known value, defaulting to 'strict'. Available options are 'strict' and 'in-chain'."
       deferred.resolve null
 
-  (Q.all promises).then ->
-    return deferred.promise
-  return
+
+  return deferred.promise
+
 
 if process.env.NODE_ENV == "test"
   exports.clientLookup = clientLookup
+
+### MyEdit May 25
+# Revocation
+###
+revokedLookup = (fingerprint, issuerCN) ->
+  logger.debug "Looking up client linked in revocation list"
+  deferred = Q.defer()
+  
+
+  RevokedCert.findOne {fingerprint: fingerprint, issuerDN: issuerCN}, (err, result) ->
+    deferred.reject err if err
+
+    if result?
+      # found a match
+      return deferred.resolve result
+
+    if config.tlsClientLookup.type is 'in-chain'
+      # walk further up and cert chain and check
+      utils.getKeystore (err, keystore) ->
+        deferred.reject err if err
+        missedMatches = 0
+        # find the isser cert
+        if not keystore.ca? || keystore.ca.length < 1
+          logger.info "Issuer cn=#{issuerCN} for cn=#{subjectCN} not found in keystore."
+          deferred.resolve null
+        else
+          for cert in keystore.ca
+            do (cert) ->
+              pem.readCertificateInfo cert.data, (err, info) ->
+                if err
+                  return deferred.reject err
+
+                if info.commonName is issuerCN
+                  promise = revokedLookup cert.fingerprint, info.commonName, info.issuer.commonName
+                  promise.then (result) -> deferred.resolve result
+                else
+                  missedMatches++
+
+                if missedMatches is keystore.ca.length
+                  logger.info "Issuer cn=#{issuerCN} for cn=#{subjectCN} not found in keystore."
+                  deferred.resolve null
+    else
+      if config.tlsClientLookup.type isnt 'strict'
+        logger.warn "tlsClientLookup.type config option does not contain a known value, defaulting to 'strict'. Available options are 'strict' and 'in-chain'."
+      deferred.resolve null
+
+
+  return deferred.promise
 
 ###
 # Koa middleware for mutual TLS authentication
@@ -174,9 +196,22 @@ exports.koaMiddleware = (next) ->
       catch err
         logger.error "Failed to lookup client: #{err}"
 
-      if this.authenticated?
+        # MyEdit
+      #lookup client in revocation list
+      try
+        revoked = yield revokedLookup cert.fingerprint, cert.issuer.CN
+      catch err
+        logger.error "Failed to lookup client for revocation: #{err}"
+      
+      # Edited - MyEdit May 25
+      if this.authenticated? and not revoked
         sdc.timing "#{domain}.tlsAuthenticationMiddleware", startTime if statsdServer.enabled
         this.authenticationType = 'tls'
+        yield next
+      else if revoked?
+        this.authenticated = null
+        logger.info "Certificate Authentication Failed: revoked cert - fingerprint: #{cert.fingerprint} issuer: #{cert.issuerCN}, trying next auth mechanism if any..."
+        sdc.timing "#{domain}.tlsAuthenticationMiddleware", startTime if statsdServer.enabled
         yield next
       else
         this.authenticated = null
