@@ -56,7 +56,7 @@ exports.getServerOptions = (mutualTLS, done) ->
 
     else
       return done(new Error 'Keystore does not exist')
-    
+
     if mutualTLS
       exports.getTrustedClientCerts (err, certs) ->
         if err
@@ -79,7 +79,8 @@ exports.getServerOptions = (mutualTLS, done) ->
 clientLookup = (fingerprint, subjectCN, issuerCN) ->
   logger.debug "Looking up client linked to cert with fingerprint #{fingerprint} with subject #{subjectCN} and issuer #{issuerCN}"
   deferred = Q.defer()
-  
+  promises = []
+
   Client.findOne certFingerprint: fingerprint, (err, result) ->
     deferred.reject err if err
 
@@ -88,19 +89,30 @@ clientLookup = (fingerprint, subjectCN, issuerCN) ->
 
       ## MyEdit - May 24
       ## Since we have found a cert-client match, (CA chaining or not)
-      ## we can heck here for revocation list match. 
-      ## 
-      revoked = false
-      RevokedCert.findOne {certFingerprint: fingerprint, issuerDN: issuerCN}, (err,result) ->
-        if err
-          return deferred.reject err
-        if not result?
-          logger.info "Certificate for cn=#{subjectCN} issuerCN=#{issuerCN} is in revocation list."
-          revoked = true
-      ######
-      if revoked?
-        return deferred.resolve null
-      return deferred.resolve result
+      ## we can heck here for revocation list match.
+      ##
+      revocation = (fp,issCN) ->
+        deff = Q.defer()
+        RevokedCert.findOne {fingerprint:fp, issuerDN: issCN}, (err,revoked) ->
+          if err
+            deff.reject err
+          if revoked?
+            logger.info "revoked: "
+            deff.resolve null
+          else
+            logger.info "not revoked: " + result
+            deff.resolve result
+        return deff.promise
+
+
+      promise_rev = revocation(fingerprint,issuerCN)
+      promise_rev.then (res) ->
+        logger.info "promise res: " + res
+        return deferred.resolve res
+
+      promises.push promise_rev
+      ##
+      #return deferred.resolve result
 
     if subjectCN is issuerCN
       # top certificate reached
@@ -136,7 +148,9 @@ clientLookup = (fingerprint, subjectCN, issuerCN) ->
         logger.warn "tlsClientLookup.type config option does not contain a known value, defaulting to 'strict'. Available options are 'strict' and 'in-chain'."
       deferred.resolve null
 
-  return deferred.promise
+  (Q.all promises).then ->
+    return deferred.promise
+  return
 
 if process.env.NODE_ENV == "test"
   exports.clientLookup = clientLookup
