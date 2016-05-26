@@ -79,7 +79,7 @@ exports.getServerOptions = (mutualTLS, done) ->
 clientLookup = (fingerprint, subjectCN, issuerCN) ->
   logger.debug "Looking up client linked to cert with fingerprint #{fingerprint} with subject #{subjectCN} and issuer #{issuerCN}"
   deferred = Q.defer()
-  
+
 
   Client.findOne certFingerprint: fingerprint, (err, result) ->
     deferred.reject err if err
@@ -135,7 +135,7 @@ if process.env.NODE_ENV == "test"
 revokedLookup = (fingerprint, issuerCN) ->
   logger.debug "Looking up client linked in revocation list"
   deferred = Q.defer()
-  
+
 
   RevokedCert.findOne {fingerprint: fingerprint, issuerDN: issuerCN}, (err, result) ->
     deferred.reject err if err
@@ -198,21 +198,24 @@ exports.koaMiddleware = (next) ->
 
         # MyEdit
       #lookup client in revocation list
-      try
-        revoked = yield revokedLookup cert.fingerprint, cert.issuer.CN
-      catch err
-        logger.error "Failed to lookup client for revocation: #{err}"
       
+      #try
+      #  revoked = yield revokedLookup cert.fingerprint, cert.issuer.CN
+      #catch err
+      #  logger.error "Failed to lookup client for revocation: #{err}"
+
+
       # Edited - MyEdit May 25
-      if this.authenticated? and not revoked
+      if this.authenticated? #and not revoked
         sdc.timing "#{domain}.tlsAuthenticationMiddleware", startTime if statsdServer.enabled
         this.authenticationType = 'tls'
         yield next
-      else if revoked?
-        this.authenticated = null
-        logger.info "Certificate Authentication Failed: revoked cert - fingerprint: #{cert.fingerprint} issuer: #{cert.issuerCN}, trying next auth mechanism if any..."
-        sdc.timing "#{domain}.tlsAuthenticationMiddleware", startTime if statsdServer.enabled
-        yield next
+
+      #else if revoked?
+      #  this.authenticated = null
+      #  logger.info "Certificate Authentication Failed: revoked cert - fingerprint: #{cert.fingerprint} issuer: #{cert.issuerCN}, trying next auth mechanism if any..."
+      #  sdc.timing "#{domain}.tlsAuthenticationMiddleware", startTime if statsdServer.enabled
+      #  yield next
       else
         this.authenticated = null
         logger.info "Certificate Authentication Failed: the certificate's fingerprint #{cert.fingerprint} did not match any client's certFingerprint attribute, trying next auth mechanism if any..."
