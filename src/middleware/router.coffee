@@ -25,6 +25,7 @@ sdc = new SDC statsdServer
 #MyEdit
 pem = require 'pem'
 keystore = require '../api/keystore'
+RevokedCert = require('../model/revokedcerts').RevokedCert
 #
 
 isRouteEnabled = (route) -> not route.status? or route.status is 'enabled'
@@ -103,6 +104,64 @@ handleServerError = (ctx, err) ->
   logger.error "#{err.stack}" if err.stack
 
 
+###
+#
+###
+revokedLookup = (cert) ->
+  logger.debug "Looking up client linked in revocation list"
+  deferred = Q.defer()
+  pem.readCertificateInfo cert, (err, match) ->
+    if err
+      logger.error 'Error in pem: ' + err
+      deferred.reject err
+    else
+      logger.info "fp: " + match.fingerprint + " issuer: " + match.issuer.commonName
+      RevokedCert.findOne {fingerprint: match.fingerprint, issuerDN: match.issuer.commonName}, (err, result) ->
+        deferred.reject err if err
+
+        if result?
+          # found a match
+          logger.error "Revoked cert of mediator"
+          return deferred.reject "Revoked cert of mediator"
+        else if config.tlsClientLookup.type is 'strict'
+          logger.info "strict type: not in revocation list. OK"
+          deferred.resolve "strict type: not in revocation list. OK"
+
+        if config.tlsClientLookup.type is 'in-chain'
+          # walk further up and cert chain and check
+          utils.getKeystore (err, keystore) ->
+            deferred.reject err if err
+            missedMatches = 0
+            # find the isser cert
+            if not keystore.ca? || keystore.ca.length < 1
+              logger.info "Issuer cn=#{issuerCN} for cn=#{subjectCN} not found in keystore."
+              deferred.reject "Route cert's issuer cert not found in keystore."
+            else
+              for cert in keystore.ca
+                do (cert) ->
+                  pem.readCertificateInfo cert.data, (err, info) ->
+                    if err
+                      return deferred.reject err
+
+                    if info.commonName is issuerCN
+                      promise = revokedLookup cert.fingerprint, info.commonName, info.issuer.commonName
+                      promise.then (result) -> deferred.resolve result
+                    else
+                      missedMatches++
+
+                    if missedMatches is keystore.ca.length
+                      logger.info "Issuer cn=#{issuerCN} for cn=#{subjectCN} not found in keystore."
+                      deferred.reject "Route cert's issuer cert not found in keystore."
+        else
+          if config.tlsClientLookup.type isnt 'strict'
+            logger.warn "tlsClientLookup.type config option does not contain a known value, defaulting to 'strict'. Available options are 'strict' and 'in-chain'."
+          #deferred.reject "Not chained and cert not found in list"
+
+
+  return deferred.promise
+###
+#
+###
 sendRequestToRoutes = (ctx, routes, next) ->
   promises = []
   promise = {}
@@ -146,6 +205,18 @@ sendRequestToRoutes = (ctx, routes, next) ->
 
         if route.cert?
           options.ca = keystore.ca.id(route.cert).data
+          promises_rev = revokedLookup(options.ca)
+          .then (response) ->
+            if response == null
+              logger.info "Outgoing transaction ok: cert ok"
+          .fail (reason) ->
+            if reason instanceof Error
+              handleServerError ctx, reason
+            handleServerError ctx, new Error reason
+            next()
+
+          promises.push promises_rev
+
 
         if ctx.request.querystring
           options.path += '?' + ctx.request.querystring
