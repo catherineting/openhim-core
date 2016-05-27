@@ -197,7 +197,7 @@ exports.getCertKeyStatus = getCertKeyStatus = (callback) ->
 
   Keystore.findOne (err, keystoreDoc) ->
     return callback err, null if err
-    
+
     # if the key is encrypted but no passphrase is supplied, return  false instantly
     if /Proc-Type:.*ENCRYPTED/.test(keystoreDoc.key) and (not keystoreDoc.passphrase? or keystoreDoc.passphrase.length == 0)
       return callback null, false
@@ -223,7 +223,7 @@ exports.getRevokedCerts = ->
   try
     this.body = yield RevokedCert.find().exec()
     #this.body = revokedcertDoc
-    
+
   catch err
     utils.logAndSetResponse this, 500, "Could not fetch the list of revoked certificates: #{err}", 'error'
 
@@ -236,11 +236,12 @@ exports.addRevokedCert = () ->
     return
 
   certData = this.request.body
+  certData['dateRevoked'] = new Date()
 
   try
     cert_entry = new RevokedCert certData
     result = yield Q.ninvoke cert_entry, 'save'
-    
+
     logger.info "User #{this.authenticated.email} added a new entry in the revocation list with for cert with serial: #{result["serial"]};issuer: #{result["issuerDN"]}"
     this.body = 'Successfully added in the Revocation list'
     this.status = 201
@@ -251,7 +252,7 @@ exports.addRevokedCert = () ->
 
 
 exports.removeRevokedCert = () ->
-#must accept {serial,issuer} 
+#must accept {serial,issuer}
   # Test if the user is authorised
   if not authorisation.inGroup 'admin', this.authenticated
     utils.logAndSetResponse this, 403, "User #{this.authenticated.email} is not an admin, API access to removeRevokedCert.", 'info'
